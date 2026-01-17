@@ -1,0 +1,6 @@
+services:
+  fetch-sub:
+    build: .
+    ports:
+      - "8888:8000"
+    restart: always
