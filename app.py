@@ -25,6 +25,10 @@ def get_subtitles(video_id: str, lang: str = "ko"):
             'no_warnings': True,
         }
 
+        # Check if cookies.txt exists and use it
+        if os.path.exists("cookies.txt"):
+            ydl_opts['cookiefile'] = 'cookies.txt'
+            
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
                 ydl.download([video_url])

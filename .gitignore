@@ -1,0 +1,16 @@
+# Git Ignore
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+.venv/
+subtitles_final.json
+subtitles_test.json
+temp_print.ko.json3
+fast_sub.ko.json3
+subtitle_temp.ko.json3
+raw_subtitles.json
+
+# Important: Ignore cookies.txt as it contains sensitive session data
+cookies.txt
