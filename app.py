@@ -15,8 +15,7 @@ def get_subtitles(video_id: str, lang: str = "ko"):
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'check_formats': False, # Bỏ qua kiểm tra định dạng để tránh lỗi 
-        'ignoreerrors': True,    # Bỏ qua lỗi nhỏ để lấy được metadata
+        'check_formats': False,
     }
 
     # Kiểm tra sự hiện diện của cookies.txt
@@ -31,10 +30,14 @@ def get_subtitles(video_id: str, lang: str = "ko"):
         try:
             # Step 1: Extract basic info (Metadata only)
             print(f"🔍 Extracting info for: {video_url}")
-            info = ydl.extract_info(video_url, download=False)
+            try:
+                info = ydl.extract_info(video_url, download=False)
+            except Exception as ydl_err:
+                print(f"❌ yt-dlp Error: {ydl_err}")
+                raise HTTPException(status_code=500, detail=f"YouTube extraction error: {str(ydl_err)}")
             
             if not info:
-                raise HTTPException(status_code=500, detail="Could not extract video metadata even with relaxed options.")
+                raise HTTPException(status_code=500, detail="Could not extract video metadata. Check if the video is private or blocked.")
             
             # Step 2: Find the subtitle URL in metadata
             subtitle_url = None
