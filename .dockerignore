@@ -1,0 +1,15 @@
+# .dockerignore
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+.venv/
+.git/
+.gitignore
+*.json
+temp_print*
+fast_sub*
+subtitle_temp*
+raw_subtitles*
+cookies.txt
