@@ -15,16 +15,26 @@ def get_subtitles(video_id: str, lang: str = "ko"):
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
+        'check_formats': False, # Bỏ qua kiểm tra định dạng để tránh lỗi 
+        'ignoreerrors': True,    # Bỏ qua lỗi nhỏ để lấy được metadata
     }
 
-    # Check for cookies.txt
-    if os.path.exists("cookies.txt"):
-        ydl_opts['cookiefile'] = 'cookies.txt'
+    # Kiểm tra sự hiện diện của cookies.txt
+    cookie_path = "cookies.txt"
+    if os.path.exists(cookie_path):
+        print(f"✅ Found cookies.txt (Size: {os.path.getsize(cookie_path)} bytes)")
+        ydl_opts['cookiefile'] = cookie_path
+    else:
+        print("⚠️  cookies.txt NOT found in /app directory")
             
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             # Step 1: Extract basic info (Metadata only)
+            print(f"🔍 Extracting info for: {video_url}")
             info = ydl.extract_info(video_url, download=False)
+            
+            if not info:
+                raise HTTPException(status_code=500, detail="Could not extract video metadata even with relaxed options.")
             
             # Step 2: Find the subtitle URL in metadata
             subtitle_url = None
