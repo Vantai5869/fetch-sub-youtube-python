@@ -1,10 +1,20 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
 import json
 import os
 import tempfile
 
 app = FastAPI(title="YouTube Subtitle Fetcher API")
+
+# Add CORS middleware to allow requests from frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 @app.get("/subtitles")
 def get_subtitles(video_id: str, lang: str = "ko"):
