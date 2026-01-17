@@ -16,6 +16,8 @@ def get_subtitles(video_id: str, lang: str = "ko"):
         'quiet': True,
         'no_warnings': True,
         'check_formats': False,
+        'allow_unplayable_formats': True, # Cho phép lấy metadata kể cả khi không có format chạy được
+        'ignore_no_formats_error': True,   # Không báo lỗi nếu không tìm thấy video format
     }
 
     # Kiểm tra sự hiện diện của cookies.txt
