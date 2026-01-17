@@ -9,96 +9,110 @@ app = FastAPI(title="YouTube Subtitle Fetcher API")
 @app.get("/subtitles")
 def get_subtitles(video_id: str, lang: str = "ko"):
     video_url = f"https://www.youtube.com/watch?v={video_id}"
+    import requests
     
-    # Use a temporary directory for yt-dlp files
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_tmpl = os.path.join(tmpdir, "sub")
-        
-        ydl_opts = {
-            'skip_download': True,
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'subtitleslangs': [lang],
-            # Do not force json3 here to avoid "format not available" error
-            # 'subtitlesformat': 'json3', 
-            'outtmpl': output_tmpl,
-            'quiet': True,
-            'no_warnings': True,
-        }
+    ydl_opts = {
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+    }
 
-        # Check if cookies.txt exists and use it
-        if os.path.exists("cookies.txt"):
-            ydl_opts['cookiefile'] = 'cookies.txt'
+    # Check for cookies.txt
+    if os.path.exists("cookies.txt"):
+        ydl_opts['cookiefile'] = 'cookies.txt'
             
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                # Get info first to check available formats
-                info = ydl.extract_info(video_url, download=False)
-                
-                # Download
-                ydl.download([video_url])
-                
-                # Find the file created by yt-dlp
-                # Files are named like: tmpdir/sub.lang.ext
-                downloaded_files = os.listdir(tmpdir)
-                filename = None
-                
-                # Priority: .json3 > .srv3 > .srv2 > .srv1 > .vtt > .ttml
-                ext_priority = ['.json3', '.srv3', '.srv2', '.srv1', '.vtt', '.ttml']
-                for ext in ext_priority:
-                    target = f"sub.{lang}{ext}"
-                    if target in downloaded_files:
-                        filename = os.path.join(tmpdir, target)
-                        break
-                
-                # If specifically requested language not found, maybe it's auto-generated with a different suffix
-                if not filename:
-                    for f in downloaded_files:
-                        if f.startswith("sub."):
-                            filename = os.path.join(tmpdir, f)
-                            break
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            # Step 1: Extract basic info (Metadata only)
+            info = ydl.extract_info(video_url, download=False)
+            
+            # Step 2: Find the subtitle URL in metadata
+            subtitle_url = None
+            found_format = None
+            
+            # Helper to find format in a track
+            def find_best_url(formats):
+                # Priority: json3 > srv3 > srv2 > srv1 > vtt
+                preferred = ['json3', 'srv3', 'srv2', 'srv1', 'vtt']
+                for p_ext in preferred:
+                    for f in formats:
+                        if f.get('ext') == p_ext:
+                            return f['url'], p_ext
+                return formats[0]['url'], formats[0].get('ext', 'unknown')
 
-                if filename and os.path.exists(filename):
-                    # For now, we only support parsing json3 directly
-                    if filename.endswith(".json3"):
-                        with open(filename, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        
-                        subtitles = []
-                        for event in data.get('events', []):
-                            if 'segs' in event:
-                                text = "".join([s.get('utf8', '') for s in event['segs']]).strip()
-                                if text:
-                                    subtitles.append({
-                                        'start': event.get('tStartMs', 0),
-                                        'duration': event.get('dDurationMs', 0),
-                                        'text': text
-                                    })
-                        
-                        return {
-                            "success": True,
-                            "video_id": video_id,
-                            "language": lang,
-                            "format": "json3",
-                            "count": len(subtitles),
-                            "subtitles": subtitles
-                        }
-                    else:
-                        # Return raw content for other formats (user can parse on frontend)
-                        with open(filename, "r", encoding="utf-8") as f:
-                            content = f.read()
-                        return {
-                            "success": True,
-                            "video_id": video_id,
-                            "language": lang,
-                            "format": filename.split('.')[-1],
-                            "raw_content": content
-                        }
-                else:
-                    raise HTTPException(status_code=404, detail=f"No subtitles found for video '{video_id}' in language '{lang}'")
+            # Look in manual subtitles first
+            subtitles = info.get('subtitles', {})
+            if lang in subtitles:
+                subtitle_url, found_format = find_best_url(subtitles[lang])
+            
+            # If not found, look in automatic captions
+            if not subtitle_url:
+                auto = info.get('automatic_captions', {})
+                if lang in auto:
+                    subtitle_url, found_format = find_best_url(auto[lang])
+
+            if not subtitle_url:
+                # If still not found, check for generic language matches (e.g., 'en.*')
+                for code, tracks in info.get('automatic_captions', {}).items():
+                    if code.startswith(lang):
+                        subtitle_url, found_format = find_best_url(tracks)
+                        lang = code
+                        break
+
+            if not subtitle_url:
+                raise HTTPException(status_code=404, detail=f"No subtitles found for video '{video_id}' in language '{lang}'")
+
+            # Step 3: Fetch the content using requests (bypasses yt-dlp internal downloader)
+            print(f"🔗 Using Subtitle URL ({found_format}): {subtitle_url[:100]}...")
+            
+            # Use same headers as yt-dlp if possible, or simple ones
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            }
+            
+            resp = requests.get(subtitle_url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail=f"Failed to fetch subtitle content from YouTube: {resp.text[:200]}")
+
+            # Step 4: Parse if it's JSON, otherwise return raw
+            if found_format == 'json3' or '"events":' in resp.text:
+                try:
+                    data = resp.json()
+                    parsed_subtitles = []
+                    for event in data.get('events', []):
+                        if 'segs' in event:
+                            text = "".join([s.get('utf8', '') for s in event['segs']]).strip()
+                            if text:
+                                parsed_subtitles.append({
+                                    'start': event.get('tStartMs', 0),
+                                    'duration': event.get('dDurationMs', 0),
+                                    'text': text
+                                })
                     
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
+                    return {
+                        "success": True,
+                        "video_id": video_id,
+                        "language": lang,
+                        "format": "json3",
+                        "count": len(parsed_subtitles),
+                        "subtitles": parsed_subtitles
+                    }
+                except:
+                    # Fallback to raw if JSON parsing fails
+                    pass
+
+            return {
+                "success": True,
+                "video_id": video_id,
+                "language": lang,
+                "format": found_format,
+                "raw_content": resp.text
+            }
+                
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 def health_check():
